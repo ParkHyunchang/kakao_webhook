@@ -1,7 +1,6 @@
 services:
   kakao-webhook:
-    build: .
-    image: kakao-webhook:latest
+    image: ghcr.io/parkhyunchang/kakao_webhook:latest
     container_name: kakao_webhook
     restart: always
     ports:
