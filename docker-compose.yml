@@ -1,0 +1,17 @@
+services:
+  kakao-webhook:
+    build: .
+    image: kakao-webhook:latest
+    container_name: kakao_webhook
+    restart: always
+    ports:
+      - "3500:3500"
+    environment:
+      DB_HOST: host.docker.internal
+      DB_PORT: "3306"
+      DB_USER: hyunchang88
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: kakao_db
+      TZ: Asia/Seoul
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
