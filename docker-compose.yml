@@ -11,6 +11,9 @@ services:
       DB_USER: hyunchang88
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: kakao_db
+      LOG_DIR: /app/logs
       TZ: Asia/Seoul
+    volumes:
+      - ./logs:/app/logs
     extra_hosts:
       - "host.docker.internal:host-gateway"

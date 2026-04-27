@@ -60,6 +60,8 @@ jobs:
           password: ${{ secrets.NAS_SSH_PASSWORD }}
           script: |
             cd /volume1/docker/kakao-webhook
+            chmod 644 docker-compose.yml
+            mkdir -p logs && chmod 755 logs
             echo "${{ secrets.NAS_SSH_PASSWORD }}" | sudo -S /usr/local/bin/docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GHCR_PAT }}
             echo "${{ secrets.NAS_SSH_PASSWORD }}" | sudo -S /usr/local/bin/docker-compose pull
             echo "${{ secrets.NAS_SSH_PASSWORD }}" | sudo -S /usr/local/bin/docker-compose up -d

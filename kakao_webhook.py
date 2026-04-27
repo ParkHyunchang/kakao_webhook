@@ -1,7 +1,9 @@
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 
 import pymysql
 from fastapi import FastAPI, Request
@@ -16,6 +18,27 @@ DB_CONFIG = {
     "autocommit": True,
 }
 
+LOG_DIR = os.getenv("LOG_DIR", "/app/logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+logger = logging.getLogger("kakao_webhook")
+logger.setLevel(logging.INFO)
+_formatter = logging.Formatter(
+    "%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+_file_handler = RotatingFileHandler(
+    os.path.join(LOG_DIR, "kakao_webhook.log"),
+    maxBytes=10 * 1024 * 1024,
+    backupCount=5,
+    encoding="utf-8",
+)
+_file_handler.setFormatter(_formatter)
+_stream_handler = logging.StreamHandler()
+_stream_handler.setFormatter(_formatter)
+logger.addHandler(_file_handler)
+logger.addHandler(_stream_handler)
+
 
 def get_conn():
     return pymysql.connect(**DB_CONFIG)
@@ -27,10 +50,13 @@ async def lifespan(_: FastAPI):
         conn = get_conn()
         conn.ping(reconnect=True)
         conn.close()
-        print(f"[startup] DB 연결 OK -> {DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}")
+        logger.info(
+            f"[startup] DB 연결 OK -> {DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}"
+        )
     except Exception as e:
-        print(f"[startup] DB 연결 실패: {e}")
+        logger.error(f"[startup] DB 연결 실패: {e}")
     yield
+    logger.info("[shutdown] 종료")
 
 
 app = FastAPI(lifespan=lifespan)
@@ -92,16 +118,19 @@ def build_response_text(data: dict, saved_id: int | None) -> str:
 @app.post("/kakao")
 async def kakao_webhook(request: Request):
     data = await request.json()
-    print("\n===== 카카오 데이터 수신 =====")
-    print(json.dumps(data, ensure_ascii=False, indent=2))
-    print("==============================\n")
+
+    user_req = data.get("userRequest", {}) or {}
+    utterance = user_req.get("utterance", "")
+    user_id = (user_req.get("user") or {}).get("id", "")
+    logger.info(f"[webhook] received user={user_id} utterance={utterance!r}")
+    logger.debug(f"[webhook] payload: {json.dumps(data, ensure_ascii=False)}")
 
     saved_id = None
     try:
         saved_id = save_message(data)
-        print(f"[db] 저장 성공 id={saved_id}")
+        logger.info(f"[db] 저장 성공 id={saved_id}")
     except Exception as e:
-        print(f"[db] 저장 실패: {e}")
+        logger.error(f"[db] 저장 실패: {e}")
 
     text = build_response_text(data, saved_id)
     return {
