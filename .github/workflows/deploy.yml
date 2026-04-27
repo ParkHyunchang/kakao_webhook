@@ -60,7 +60,7 @@ jobs:
           password: ${{ secrets.NAS_SSH_PASSWORD }}
           script: |
             cd /volume1/docker/kakao-webhook
-            echo "${{ secrets.NAS_SSH_PASSWORD }}" | sudo -S docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GHCR_PAT }}
-            echo "${{ secrets.NAS_SSH_PASSWORD }}" | sudo -S docker-compose pull
-            echo "${{ secrets.NAS_SSH_PASSWORD }}" | sudo -S docker-compose up -d
-            echo "${{ secrets.NAS_SSH_PASSWORD }}" | sudo -S docker image prune -f
+            echo "${{ secrets.NAS_SSH_PASSWORD }}" | sudo -S /usr/local/bin/docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GHCR_PAT }}
+            echo "${{ secrets.NAS_SSH_PASSWORD }}" | sudo -S /usr/local/bin/docker-compose pull
+            echo "${{ secrets.NAS_SSH_PASSWORD }}" | sudo -S /usr/local/bin/docker-compose up -d
+            echo "${{ secrets.NAS_SSH_PASSWORD }}" | sudo -S /usr/local/bin/docker image prune -f
