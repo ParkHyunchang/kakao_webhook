@@ -6,6 +6,7 @@ from datetime import datetime
 from logging.handlers import RotatingFileHandler
 
 import pymysql
+from pymysql.cursors import DictCursor
 from fastapi import FastAPI, Request
 
 DB_CONFIG = {
@@ -62,7 +63,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 
-def save_message(data: dict) -> int:
+def save_message(conn, data: dict) -> int:
     user_req = data.get("userRequest", {}) or {}
     intent = data.get("intent", {}) or {}
     user = user_req.get("user", {}) or {}
@@ -77,42 +78,97 @@ def save_message(data: dict) -> int:
             (user_id, utterance, intent_name, block_name, raw_payload)
         VALUES (%s, %s, %s, %s, %s)
     """
-    conn = get_conn()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(sql, (
-                user_id,
-                utterance,
-                intent_name,
-                block_name,
-                json.dumps(data, ensure_ascii=False),
-            ))
-            return cur.lastrowid
-    finally:
-        conn.close()
+    with conn.cursor() as cur:
+        cur.execute(sql, (
+            user_id,
+            utterance,
+            intent_name,
+            block_name,
+            json.dumps(data, ensure_ascii=False),
+        ))
+        return cur.lastrowid
 
 
-def build_response_text(data: dict, saved_id: int | None) -> str:
-    user_req = data.get("userRequest", {}) or {}
-    user = user_req.get("user", {}) or {}
-    intent = data.get("intent", {}) or {}
+def get_user(conn, user_id: str) -> dict | None:
+    with conn.cursor(DictCursor) as cur:
+        cur.execute(
+            "SELECT user_id, display_name, state, message_count "
+            "FROM kakao_users WHERE user_id = %s",
+            (user_id,),
+        )
+        return cur.fetchone()
 
-    utterance = user_req.get("utterance") or "(빈 메시지)"
-    user_id = user.get("id") or "unknown"
-    intent_name = intent.get("name") or "-"
+
+def create_user(conn, user_id: str) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO kakao_users (user_id) VALUES (%s)",
+            (user_id,),
+        )
+
+
+def set_user_name(conn, user_id: str, name: str) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE kakao_users SET display_name = %s, state = 'registered', "
+            "message_count = message_count + 1 WHERE user_id = %s",
+            (name, user_id),
+        )
+
+
+def bump_user_activity(conn, user_id: str) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE kakao_users SET message_count = message_count + 1 "
+            "WHERE user_id = %s",
+            (user_id,),
+        )
+
+
+def build_registered_response(display_name: str, message_count: int,
+                              utterance: str, saved_id: int | None) -> str:
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
     lines = [
-        "✅ 메시지 수신 완료",
+        f"✅ {display_name}님 메시지 수신 완료",
         "─────────────────",
-        f"📝 입력: {utterance}",
-        f"👤 사용자: {user_id[:12]}…" if len(user_id) > 12 else f"👤 사용자: {user_id}",
-        f"🎯 인텐트: {intent_name}",
+        f"📝 입력: {utterance or '(빈 메시지)'}",
+        f"💬 누적: {message_count}회",
         f"🕐 시간: {now}",
     ]
     if saved_id is not None:
         lines.append(f"💾 저장 ID: {saved_id}")
     return "\n".join(lines)
+
+
+def handle_user_flow(conn, user_id: str, utterance: str,
+                     saved_id: int | None) -> str:
+    user = get_user(conn, user_id)
+
+    if user is None:
+        create_user(conn, user_id)
+        return (
+            "안녕하세요! 처음 오신 분이네요. 👋\n"
+            "어떻게 불러드릴까요?\n"
+            "다음 메시지로 닉네임을 보내주세요."
+        )
+
+    if user["state"] == "awaiting_name":
+        name = (utterance or "").strip()[:64]
+        if not name:
+            return "닉네임이 비어 있어요. 다시 한 번 보내주세요!"
+        set_user_name(conn, user_id, name)
+        return (
+            f"반갑습니다, {name}님! 🎉\n"
+            f"앞으로 이렇게 불러드릴게요."
+        )
+
+    bump_user_activity(conn, user_id)
+    return build_registered_response(
+        display_name=user["display_name"] or "(이름 없음)",
+        message_count=(user["message_count"] or 0) + 1,
+        utterance=utterance,
+        saved_id=saved_id,
+    )
 
 
 @app.post("/kakao")
@@ -126,17 +182,43 @@ async def kakao_webhook(request: Request):
     logger.debug(f"[webhook] payload: {json.dumps(data, ensure_ascii=False)}")
 
     saved_id = None
-    try:
-        saved_id = save_message(data)
-        logger.info(f"[db] 저장 성공 id={saved_id}")
-    except Exception as e:
-        logger.error(f"[db] 저장 실패: {e}")
+    response_text = "메시지를 받았지만 처리 중 오류가 발생했어요."
 
-    text = build_response_text(data, saved_id)
+    try:
+        conn = get_conn()
+        try:
+            try:
+                saved_id = save_message(conn, data)
+                logger.info(f"[db] 메시지 저장 id={saved_id}")
+            except Exception as e:
+                logger.error(f"[db] 메시지 저장 실패: {e}")
+
+            response_text = handle_user_flow(conn, user_id, utterance, saved_id)
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.error(f"[db] 사용자 처리 실패: {e}")
+
     return {
         "version": "2.0",
-        "template": {"outputs": [{"simpleText": {"text": text}}]},
+        "template": {"outputs": [{"simpleText": {"text": response_text}}]},
     }
+
+
+@app.get("/users")
+async def list_users():
+    conn = get_conn()
+    try:
+        with conn.cursor(DictCursor) as cur:
+            cur.execute(
+                "SELECT user_id, display_name, state, message_count, "
+                "first_seen_at, last_seen_at "
+                "FROM kakao_users ORDER BY last_seen_at DESC"
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    return {"count": len(rows), "users": rows}
 
 
 @app.get("/health")

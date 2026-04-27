@@ -36,7 +36,8 @@ MySQL 컨테이너 (vue_personal_project-backend-db, kakao_db 스키마)
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| POST | `/kakao` | 카카오 스킬 웹훅. 메시지 저장 후 simpleText 응답 |
+| POST | `/kakao` | 카카오 스킬 웹훅. 메시지 저장 + 닉네임 등록 흐름 후 simpleText 응답 |
+| GET | `/users` | 등록된 사용자 목록 (관리자 확인용) |
 | GET | `/health` | 헬스체크. DB 연결 상태 포함 |
 
 ## DB 스키마
@@ -56,6 +57,31 @@ CREATE TABLE kakao_messages (
 ```
 
 전체 페이로드는 `raw_payload` (JSON) 에 그대로 보관. 자주 쓰는 필드만 별도 컬럼으로 정규화.
+
+```sql
+CREATE TABLE kakao_users (
+  user_id       VARCHAR(128) PRIMARY KEY,
+  display_name  VARCHAR(64),
+  state         VARCHAR(32) NOT NULL DEFAULT 'awaiting_name',
+  message_count INT NOT NULL DEFAULT 0,
+  first_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_seen_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+```
+
+카카오 webhook이 주는 `userRequest.user.id` 해시값과 사용자가 자가신고한 닉네임을 매핑. `state` 는 `awaiting_name` → `registered` 로 진행.
+
+## 닉네임 등록 흐름
+
+카카오 webhook에는 사용자 식별 정보가 해시 ID 하나뿐이라, 첫 진입자에게 직접 닉네임을 받아 매핑한다.
+
+| 단계 | 사용자 발화 | 봇 응답 |
+|---|---|---|
+| 1. 신규 진입 | (아무 메시지) | "어떻게 불러드릴까요? 다음 메시지로 닉네임을 보내주세요." |
+| 2. 닉네임 등록 | `홍길동` | "반갑습니다, 홍길동님! 🎉" |
+| 3. 이후 대화 | (아무 메시지) | `✅ 홍길동님 메시지 수신 완료` 형태로 응답 |
+
+> 카카오싱크 기반 정식 본인 식별이 필요하면 비즈니스 채널 심사 + 사용자 정보 동의 항목 설정이 추가로 필요하다. 현재 구조는 데모/포트폴리오 용도의 자가신고 매핑이다.
 
 ## 환경변수
 
@@ -163,18 +189,34 @@ SELECT id, user_id, utterance, intent_name, created_at
 FROM kakao_db.kakao_messages
 ORDER BY id DESC
 LIMIT 10;
+
+SELECT user_id, display_name, state, message_count, last_seen_at
+FROM kakao_db.kakao_users
+ORDER BY last_seen_at DESC;
+```
+
+### 등록 사용자 조회 (HTTP)
+```bash
+curl https://hyunchang.synology.me:8443/users
 ```
 
 ## 응답 포맷
 
+등록 완료된 사용자 응답:
 ```
-✅ 메시지 수신 완료
+✅ 홍길동님 메시지 수신 완료
 ─────────────────
 📝 입력: 안녕하세요
-👤 사용자: test_user_1
-🎯 인텐트: 인사블록
+💬 누적: 12회
 🕐 시간: 2026-04-27 11:53:04
-💾 저장 ID: 1
+💾 저장 ID: 42
+```
+
+신규 진입자 응답:
+```
+안녕하세요! 처음 오신 분이네요. 👋
+어떻게 불러드릴까요?
+다음 메시지로 닉네임을 보내주세요.
 ```
 
 ## 참고

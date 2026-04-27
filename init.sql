@@ -21,3 +21,12 @@ CREATE TABLE IF NOT EXISTS kakao_messages (
   INDEX idx_user (user_id),
   INDEX idx_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS kakao_users (
+  user_id       VARCHAR(128) PRIMARY KEY,
+  display_name  VARCHAR(64),
+  state         VARCHAR(32) NOT NULL DEFAULT 'awaiting_name',
+  message_count INT NOT NULL DEFAULT 0,
+  first_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_seen_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
