@@ -1,4 +1,4 @@
-name: Build and Deploy
+name: Build and Push
 
 on:
   push:
@@ -36,33 +36,3 @@ jobs:
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Copy docker-compose.yml to NAS
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.NAS_HOST }}
-          username: ${{ secrets.NAS_USER }}
-          password: ${{ secrets.NAS_SSH_PASSWORD }}
-          source: "docker-compose.yml"
-          target: "/volume1/docker/kakao-webhook"
-
-      - name: Pull and restart on NAS
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.NAS_HOST }}
-          username: ${{ secrets.NAS_USER }}
-          password: ${{ secrets.NAS_SSH_PASSWORD }}
-          script: |
-            cd /volume1/docker/kakao-webhook
-            chmod 644 docker-compose.yml
-            mkdir -p logs && chmod 755 logs
-            echo "${{ secrets.NAS_SSH_PASSWORD }}" | sudo -S /usr/local/bin/docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GHCR_PAT }}
-            echo "${{ secrets.NAS_SSH_PASSWORD }}" | sudo -S /usr/local/bin/docker-compose pull
-            echo "${{ secrets.NAS_SSH_PASSWORD }}" | sudo -S /usr/local/bin/docker-compose up -d
-            echo "${{ secrets.NAS_SSH_PASSWORD }}" | sudo -S /usr/local/bin/docker image prune -f

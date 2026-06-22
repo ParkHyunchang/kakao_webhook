@@ -6,14 +6,10 @@ services:
     ports:
       - "3500:3500"
     environment:
-      DB_HOST: host.docker.internal
-      DB_PORT: "3306"
-      DB_USER: hyunchang88
-      DB_PASSWORD: ${DB_PASSWORD}
-      DB_NAME: kakao_db
+      VLLM_BASE_URL: ${VLLM_BASE_URL}
+      VLLM_MODEL: ${VLLM_MODEL:-qwen2.5-vl-32b-instruct-awq}
+      VLLM_TIMEOUT: ${VLLM_TIMEOUT:-55}
       LOG_DIR: /app/logs
       TZ: Asia/Seoul
     volumes:
       - ./logs:/app/logs
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
