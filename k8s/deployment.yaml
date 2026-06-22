@@ -4,16 +4,6 @@ metadata:
   name: kakao-webhook
 
 ---
-apiVersion: v1
-kind: Secret
-metadata:
-  name: kakao-webhook-secret
-  namespace: kakao-webhook
-type: Opaque
-stringData:
-  DB_PASSWORD: "여기에_MySQL_비밀번호"
-
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -29,6 +19,8 @@ spec:
       labels:
         app: kakao-webhook
     spec:
+      imagePullSecrets:
+        - name: ghcr-secret
       containers:
         - name: kakao-webhook
           image: ghcr.io/parkhyunchang/kakao_webhook:latest
@@ -36,19 +28,6 @@ spec:
           ports:
             - containerPort: 3500
           env:
-            - name: DB_HOST
-              value: "host.docker.internal"
-            - name: DB_PORT
-              value: "3306"
-            - name: DB_USER
-              value: "hyunchang88"
-            - name: DB_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: kakao-webhook-secret
-                  key: DB_PASSWORD
-            - name: DB_NAME
-              value: "kakao_db"
             - name: VLLM_BASE_URL
               value: "http://qwen2-5-vl-32b-awq.vllm.svc.cluster.local:8000"
             - name: VLLM_MODEL
