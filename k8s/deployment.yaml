@@ -19,8 +19,6 @@ spec:
       labels:
         app: kakao-webhook
     spec:
-      imagePullSecrets:
-        - name: ghcr-secret
       containers:
         - name: kakao-webhook
           image: ghcr.io/parkhyunchang/kakao_webhook:latest
