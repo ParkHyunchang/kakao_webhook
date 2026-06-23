@@ -51,11 +51,23 @@ app = FastAPI(lifespan=lifespan)
 
 def extract_image_url(data: dict) -> str | None:
     user_req = data.get("userRequest", {}) or {}
-    attachments = user_req.get("attachments", {}) or {}
-    for item in attachments.get("items", []) or []:
-        attachment = item.get("attachment") or {}
+
+    # 1순위: 카카오 정석 구조 (오픈빌더 이미지 업로드 블록)
+    media = (user_req.get("params") or {}).get("media") or {}
+    if media.get("type") == "image" and media.get("url"):
+        return media["url"]
+
+    # 2순위: attachments 구조 (구버전/대안 경로)
+    for item in (user_req.get("attachments") or {}).get("items", []) or []:
+        attachment = (item.get("attachment") or {})
         if attachment.get("type") == "image":
             return (attachment.get("data") or {}).get("url")
+
+    # 3순위: utterance에 이미지 URL이 직접 들어오는 경우
+    utterance = user_req.get("utterance", "") or ""
+    if utterance.startswith("http") and ("kakaocdn.net" in utterance or "kakao.com" in utterance):
+        return utterance
+
     return None
 
 
