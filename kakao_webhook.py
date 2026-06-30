@@ -113,7 +113,7 @@ async def process_ocr_and_callback(callback_url: str, image_url: str):
     logger.info(f"[ocr] 시작 image={image_url}")
     try:
         ocr_text = await call_vllm_ocr(image_url)
-        logger.info(f"[ocr] 완료 chars={len(ocr_text)}")
+        logger.info(f"[ocr] 결과 image={image_url}\n{ocr_text}")
         body = kakao_text_response(f"📄 OCR 결과\n─────────────────\n{ocr_text}")
     except Exception as e:
         logger.error(f"[ocr] 실패: {e}")
@@ -147,6 +147,7 @@ async def kakao_webhook(request: Request, background_tasks: BackgroundTasks):
             # callbackUrl 없을 때 동기 처리 (5초 제한 주의)
             try:
                 ocr_text = await asyncio.wait_for(call_vllm_ocr(image_url), timeout=4.5)
+                logger.info(f"[ocr] 결과 image={image_url}\n{ocr_text}")
                 return kakao_text_response(f"📄 OCR 결과\n─────────────────\n{ocr_text}")
             except asyncio.TimeoutError:
                 return kakao_text_response("⏱️ 분석 시간이 초과됐어요. 잠시 후 다시 시도해주세요.")
