@@ -19,9 +19,11 @@ spec:
       labels:
         app: kakao-webhook
     spec:
+      imagePullSecrets:
+        - name: gitlab-registry-secret
       containers:
         - name: kakao-webhook
-          image: ghcr.io/parkhyunchang/kakao_webhook:latest
+          image: registry.gitlab.ponylink.co.kr/groupcompany/kakao_webhook:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 3500

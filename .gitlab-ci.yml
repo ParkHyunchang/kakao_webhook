@@ -1,0 +1,54 @@
+stages:
+  - build
+  - deploy
+
+variables:
+  IMAGE_NAME: $CI_REGISTRY_IMAGE
+  DOCKER_TLS_CERTDIR: "/certs"
+
+# ──────────────────────────────────────────
+# Stage 1: Docker 이미지 빌드 & 레지스트리 푸시
+# ──────────────────────────────────────────
+build:
+  stage: build
+  image: docker:26
+  services:
+    - name: docker:26-dind
+      alias: docker
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+  script:
+    # 이전 latest 이미지를 캐시 소스로 활용 (pip install 레이어 재사용)
+    - docker pull "$IMAGE_NAME:latest" || true
+    - |
+      docker build \
+        --cache-from "$IMAGE_NAME:latest" \
+        --tag "$IMAGE_NAME:latest" \
+        --tag "$IMAGE_NAME:$CI_COMMIT_SHA" \
+        .
+    - docker push "$IMAGE_NAME:latest"
+    - docker push "$IMAGE_NAME:$CI_COMMIT_SHA"
+  rules:
+    # main 브랜치 push 시 자동 실행
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    # GitLab 웹 UI에서 수동 실행 (구 workflow_dispatch)
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+
+# ──────────────────────────────────────────
+# Stage 2: Kubernetes 배포
+# ──────────────────────────────────────────
+deploy:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  before_script:
+    - mkdir -p ~/.kube
+    - echo "$KUBECONFIG_BASE64" | base64 -d > ~/.kube/config
+    - chmod 600 ~/.kube/config
+  script:
+    - kubectl set image deployment/kakao-webhook kakao-webhook="$IMAGE_NAME:$CI_COMMIT_SHA" -n kakao-webhook
+    - kubectl rollout status deployment/kakao-webhook -n kakao-webhook --timeout=120s
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+  needs:
+    - build
